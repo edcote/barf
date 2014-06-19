@@ -1,0 +1,12 @@
+barf = Barf()
+barf.load_comps('top')
+
+# Clean up WSTMP
+CleanTmp().execute()
+
+# Create simulation design library
+RunVlib().execute()
+
+# Compiles design source code
+RunVlog().execute(barf.flist_obj) # pass flist_obj to job
+
