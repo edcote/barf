@@ -1,12 +1,27 @@
-barf = Barf()
-barf.load_comps('top')
+# -----------------------------------------------------------------------------
+# analyze.barf
+# -----------------------------------------------------------------------------
+barf = Barf(args.top)
 
-# Clean up WSTMP
-CleanTmp().execute()
+print('#'*80)
+print('# ANALYZE')
+print('# Top component: {0}'.format(args.top))
+print('#'*80+'\n')
 
-# Create simulation design library
-RunVlib().execute()
+# VLIB
+vlib_job = Job()
+cmd = 'vlib work'
+vlib_job.exec_cmd(cmd)
 
-# Compiles design source code
-RunVlog().execute(barf.flist_obj) # pass flist_obj to job
-
+# VLOG
+vlog_job = Job()
+cmd = '''\
+vlog \
+-sv \
+-timescale "1ns/1ps" \
+-suppress 2186 \
+{flist} \
+{vopts}\
+'''.format(flist=barf.get_flist(),
+         vopts=barf.get_vopts())
+vlog_job.exec_cmd(cmd)
