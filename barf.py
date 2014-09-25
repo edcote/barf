@@ -25,21 +25,36 @@ furnished to do so, subject to the following conditions:
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
     THE
     SOFTWARE.
-""" 
+"""
 
-import code
+import argparse
+import logging
 import os
 import subprocess
 import sys
+import traceback
 import yaml
 
 class Barf(object):
     """ Build and Run Flow """
 
+    def __init__(self,top_node=''):
+        """ Creates object of type Barf """    
+        self.logger = logging.getLogger('BARF')
+        if top_node != '':
+            self.set_top_node(top_node)
+            self.load_comps()
+
+    def set_top_node(self, top_node):
+        self.top_node = top_node
+
     def post_order(self, node):
         """ Recursive post order tree traversal """
+        self.logger.info('node='+str(node))
+
         if not node:
-            return
+            raise RuntimeError(node+' is not defined')
+
         for child_name in node['requires']:
             child_node = self.comp[child_name]
             self.post_order(child_node)
@@ -47,27 +62,55 @@ class Barf(object):
             self.flist_obj.append(node)
             node['visited'] = 1
 
-    def load_comps(self, top_node):
+    def load_comps(self):
         """ Load components from yaml files """
+        if not self.top_node:
+            raise RuntimeError('top node not set by user')
+
+        self.logger.info('top_node='+self.top_node)
+
         self.comp = {}
 
         for root,dirs,files in os.walk(os.environ.get('WS')):
-            for file in files:
-                if file == "comp.yml":
-                    full_path = os.path.join(root, file)
+            for f in files:
+                if f == "comp.yml":
+                    full_path = os.path.join(root, f)
+                    self.logger.info('node_path='+full_path)
+
                     stream = yaml.load(open(full_path))
 
-                    stream['files'] = [ root+'/'+x for x in stream['files'] ]
+                    # http://www.pythonforbeginners.com#/basics/list-comprehensions-in-python
+                    stream['files'] = [((root+'/'+x) if x[0] != "$" else x) for x in stream['files'] ]
+                    self.logger.info(stream)
 
                     name = stream['name']
+                    self.logger.info('node_name='+name)
                     self.comp[name] = {}
                     self.comp[name]['files'] = stream['files']
                     self.comp[name]['options'] = stream['options'] 
                     self.comp[name]['requires'] = stream['requires']
                     self.comp[name]['visited'] = 0
 
-        self.flist_obj = []        
-        self.post_order(self.comp[top_node])
+        self.flist_obj = []
+
+        if not self.top_node in self.comp:
+            raise RuntimeError('top node not found')
+
+        self.post_order(self.comp[self.top_node])
+
+    def get_flist(self):
+        """ Returns list of files """
+        files = []
+        for obj in self.flist_obj:
+            files +=  obj['files']
+        return ' '.join(files)
+
+    def get_vopts(self):
+        """ Returns list of Verilog options """ 
+        options = []
+        for obj in self.flist_obj:
+            options +=  obj['options']
+        return ' '.join(options)
 
 class Job(object):
     """ Base class for job object """
@@ -75,15 +118,15 @@ class Job(object):
     def exec_cmd(self,cmd,wdir=os.environ.get('WSTMP')):
         """ Execute shell command """
         p = subprocess.Popen('cd {0} && {1}'.format(wdir,cmd),
-                                                    stdout=subprocess.PIPE,shell=True)
+                                                    stdout=subprocess.PIPE,
+                                                    shell=True)
         (stdout, stderr) = p.communicate()
 
-        print('#' * 80)
-        print('#')
-        print('# Command: {0}'.format(cmd))
+        print('#'*80)
+        print('# Command:')
+        print('# {0}'.format(cmd))
         print('# Working dir: {0}'.format(wdir))
-        print('#')
-        print('#' * 80 + '\n')
+        print('#'*80 + '\n\n')
         if stdout:
             print(stdout)
         print('\n')
@@ -95,15 +138,6 @@ class Job(object):
 
         return (stdout, stderr)
 
-    def cyg_to_win_path(self,cyg_path):
-        """ Convert cygwin path to windows path """
-        p = subprocess.Popen('cygpath -w '+cyg_path,stdout=subprocess.PIPE,shell=True)
-        return '"'+p.communicate()[0].rstrip()+'"'
-
-class GenFlist(Job):
-    def execute(self,flist_obj):
-        pass
-
 class CleanTmp(Job):
     def execute(self,lib_name='work'):
         wstmp = os.environ.get('WSTMP')
@@ -111,43 +145,34 @@ class CleanTmp(Job):
             self.exec_cmd('rm -rf {0}/*'.format(wstmp))
         self.exec_cmd('mkdir -p {0}'.format(wstmp),wdir='.')
 
-class RunVlib(Job):
-    def execute(self,lib_name='work'):
-        self.exec_cmd('vlib {0}'.format(lib_name))
+# http://doughellmann.com/2009/06/19/python-exception-handling-techniques.html
+def main():
+    if not os.environ.has_key("WS"):
+        raise Exception('$WS not set')
 
-class RunVlog(Job):
-    def execute(self,flist_obj):
-        files = []
-        for obj in flist_obj:
-            files +=  obj['files']
-        files = [ self.cyg_to_win_path(x) for x in files ]
+    if not os.environ.has_key("WSTMP"):
+        raise Exception('$WSTMP not set')
 
-        options = []
-        for obj in flist_obj:
-            options +=  obj['options']
-
-        self.exec_cmd('vlog -sv {0} {1}'.format(' '.join(files),
-                                                ' '.join(options)))
-
-if __name__ == "__main__":
-    import argparse
-    import barf
-
-    # Print banner
-    print('''.______        ___      .______       _______ 
-|   _  \      /   \     |   _  \     |  ____|
-|  |_)  |    /  ^  \    |  |_)  |    |  |__
-|   _  <    /  /_\  \   |      /     |   __|
-|  |_)  |  /  _____  \  |  |\  \----.|  |
-|______/  /__/     \__\ | _| `._____||__|
-
-       BARF - Build and Run Flow 0.1
-''')
-
-    parser = argparse.ArgumentParser(description='Build and Run Flow 0.1')
+    parser = argparse.ArgumentParser(description='Build and Run Flow 0.3')
     parser.add_argument('-f','--file',
                         help='BARF script to execute',required=True)
+    parser.add_argument('-t','--top',
+                        help='Name of top component')
+    parser.add_argument('-v','--verbose',
+                        help='Verbose output',action='store_true')
     parser.parse_args()
 
-    execfile(parser.parse_args().file)
+    args = parser.parse_args()
 
+    if args.verbose:
+        logging.basicConfig(level=logging.INFO)
+
+    execfile(args.file)
+
+if __name__ == '__main__':
+    try:
+        main()
+        sys.exit(0)
+    except Exception, err:
+        traceback.print_exc(file=sys.stdout)
+        sys.exit(1)
