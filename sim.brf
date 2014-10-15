@@ -1,0 +1,32 @@
+parser.add_argument('-c','--comp', required=True, help='Name of top component')
+parser.add_argument('-b','--build_path',
+                    default="{}/{}/work".format(os.environ.get('WSTMP'), "build"),
+                    help='Path to build directory')
+parser.add_argument('-d','--dump', action='store_true', help='Enable waveform dump')
+parser.add_argument('-t','--test', required=True, help='Name of test')
+args = parser.parse_args(barf.args_list)
+
+barf.load_comps(args.comp)  # initialize BARF
+
+# Initialize sim job
+job = Job('sim')
+job.set_tstamp()
+
+# Execute VMAP
+cmd = "vmap work {}".format(args.build_path)
+job.exec_cmd(cmd)
+
+# Execute VSIM
+cmd = """\
+vsim -c work.{top_module} \
+-do "{dump}run -all;" \
+-quiet \
+-l {log_path}/sim.log \
++UVM_TESTNAME={testname} \
++UVM_NO_RELNOTES \
+""".format(top_module=barf.guess_top_module(),
+           log_path=job.get_wdir(),
+           dump='add wave *;' if args.dump else '',
+           testname=args.test
+          )
+job.exec_cmd(cmd)
