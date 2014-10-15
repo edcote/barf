@@ -1,0 +1,28 @@
+# Parse command line arguments
+parser = argparse.ArgumentParser(description='Build')
+parser.add_argument('-c','--comp', help='Name of top component')
+args = parser.parse_args(barf.args_list)
+
+barf.load_comps(args.comp)  # initialize BARF
+
+job = Job('build')  # initialize build job
+
+# Execute VLIB
+cmd = 'vlib work'
+job.exec_cmd(cmd)
+
+# Execute VLOG
+cmd = '''\
+vlog \
+-sv \
+-timescale "1ns/1ps" \
+-suppress 2186 \
+-quiet \
+{flist} \
+{vopts} \
+-l {log_path}/build.log \
+'''.format(flist=barf.get_flist(),
+           vopts=barf.get_vopts(),
+           log_path=job.get_wdir()
+          )
+job.exec_cmd(cmd)
