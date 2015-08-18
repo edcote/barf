@@ -1,3 +1,5 @@
+# Parse command line arguments
+parser = argparse.ArgumentParser(description='Simulate')
 parser.add_argument('-c','--comp', required=True, help='Name of top component')
 parser.add_argument('-b','--build_path',
                     default="{}/{}/work".format(os.environ.get('WSTMP'), "build"),
