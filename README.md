@@ -1,3 +1,3 @@
-# BARF (Build and Run Flow)
+# barf!
 
-This is an now-obsolete hardware design build and run flow written in Python.
+A now-obsolete hardware design build and run flow.
